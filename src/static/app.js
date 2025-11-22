@@ -23,6 +23,8 @@ document.addEventListener("DOMContentLoaded", () => {
           .replace(/'/g, "&#39;");
       }
 
+      // Reset activity select (keep placeholder) and populate activities list
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
         const activityCard = document.createElement("div");
@@ -31,10 +33,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const participants = details.participants || [];
         const spotsLeft = (details.max_participants || 0) - participants.length;
 
-        // Build participants HTML (bulleted list) or a no-participants message
+        // Build participants HTML (unstyled bullets removed) with a remove button
         const participantsHTML = participants.length
           ? `<ul class="participants-list">${participants
-              .map((p) => `<li class="participant-item">${escapeHTML(p)}</li>`)
+              .map((p) => `
+                <li class="participant-item">
+                  <span class="participant-email">${escapeHTML(p)}</span>
+                  <button class="participant-remove" data-email="${escapeHTML(p)}" data-activity="${escapeHTML(name)}" aria-label="Remove participant">✖</button>
+                </li>`)
               .join("")}</ul>`
           : `<p class="no-participants">No participants yet</p>`;
 
@@ -48,6 +54,37 @@ document.addEventListener("DOMContentLoaded", () => {
             ${participantsHTML}
           </div>
         `;
+
+        // Attach remove handlers for the participant buttons
+        activityCard.querySelectorAll('.participant-remove').forEach((btn) => {
+          btn.addEventListener('click', async (e) => {
+            const email = btn.dataset.email;
+            const activityName = btn.dataset.activity;
+            try {
+              const res = await fetch(
+                `/activities/${encodeURIComponent(activityName)}/signup?email=${encodeURIComponent(email)}`,
+                { method: 'DELETE' }
+              );
+              const result = await res.json();
+              if (res.ok) {
+                messageDiv.textContent = result.message;
+                messageDiv.className = 'success';
+                // Refresh activities list so UI updates
+                await fetchActivities();
+              } else {
+                messageDiv.textContent = result.detail || 'Failed to remove participant';
+                messageDiv.className = 'error';
+              }
+            } catch (err) {
+              console.error('Error removing participant:', err);
+              messageDiv.textContent = 'Failed to remove participant. Please try again.';
+              messageDiv.className = 'error';
+            }
+
+            messageDiv.classList.remove('hidden');
+            setTimeout(() => messageDiv.classList.add('hidden'), 5000);
+          });
+        });
 
         activitiesList.appendChild(activityCard);
 
@@ -80,10 +117,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const result = await response.json();
 
-      if (response.ok) {
+        if (response.ok) {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        // Refresh activities so the new participant appears without manual reload
+        await fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
